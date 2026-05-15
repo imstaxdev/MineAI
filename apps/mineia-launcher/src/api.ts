@@ -76,8 +76,11 @@ export const api = {
   updateProfileSettings: (profileId: number, settings: ProfileSettings) =>
     invoke<Profile>("update_profile_settings", { profileId, settings }),
   detectJava: () => invoke<JavaInfo>("detect_java"),
+  isVersionInstalled: (version: string) => invoke<boolean>("is_version_installed", { version }),
   listMinecraftVersions: () => invoke<MinecraftVersionItem[]>("list_minecraft_versions"),
   installVersion: (version: string) => invoke<InstallVersionReport>("install_version", { version }),
+  prepareVersionForLaunch: (version: string) =>
+    invoke<InstallVersionReport>("prepare_version_for_launch", { version }),
   launchProfile: (profileId: number) => invoke<LaunchResult>("launch_profile", { profileId }),
   importMod: (profileId: number, file: string) => invoke<ImportedFile>("import_mod", { profileId, file }),
   importShader: (profileId: number, file: string) => invoke<ImportedFile>("import_shader", { profileId, file }),

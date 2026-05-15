@@ -55,6 +55,7 @@ export default function App() {
   const [launch, setLaunch] = createSignal<LaunchResult | null>(null);
   const [modpack, setModpack] = createSignal<ModpackImportReport | null>(null);
   const [busy, setBusy] = createSignal(false);
+  const [busyLabel, setBusyLabel] = createSignal("");
   const [message, setMessage] = createSignal("Listo para jugar");
   const [panel, setPanel] = createSignal<Panel>("play");
 
@@ -81,6 +82,7 @@ export default function App() {
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
       setBusy(false);
+      setBusyLabel("");
     }
   }
 
@@ -156,12 +158,16 @@ export default function App() {
     if (!profile) return;
 
     await runTask(async () => {
-      setMessage(`Preparando ${version()}...`);
       const updated = await persistSelectedVersion(profile);
-      const report = await api.installVersion(version());
+      setBusyLabel("Preparando");
+      setMessage(`Preparando ${version()}...`);
+      await nextFrame();
+      const report = await api.prepareVersionForLaunch(version());
       setInstallReport(report);
       markVersionInstalled(report.version);
-      setMessage(`Abriendo ${report.version}...`);
+      setBusyLabel("Abriendo");
+      setMessage(`Abriendo ${version()}...`);
+      await nextFrame();
       const result = await api.launchProfile(updated.id);
       setLaunch(result);
       setMessage("Minecraft se esta abriendo");
@@ -170,7 +176,9 @@ export default function App() {
 
   async function installSelectedVersion() {
     await runTask(async () => {
+      setBusyLabel("Preparando");
       setMessage(`Preparando ${version()}...`);
+      await nextFrame();
       const result = await api.installVersion(version());
       setInstallReport(result);
       markVersionInstalled(result.version);
@@ -182,7 +190,9 @@ export default function App() {
     await runTask(async () => {
       let last: InstallVersionReport | null = null;
       for (const item of versionCards()) {
+        setBusyLabel("Preparando");
         setMessage(`Preparando ${item.id}`);
+        await nextFrame();
         last = await api.installVersion(item.id);
         markVersionInstalled(item.id);
       }
@@ -227,6 +237,10 @@ export default function App() {
         setMessage(`Modpack agregado: ${result.name}`);
       }
     });
+  }
+
+  function nextFrame() {
+    return new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   }
 
   return (
@@ -383,14 +397,14 @@ export default function App() {
                       disabled={busy()}
                       onClick={installSelectedVersion}
                     >
-                      Preparar
+                      {busyLabel() === "Preparando" ? "Preparando" : "Preparar"}
                     </button>
                     <button
                       class="h-16 min-w-48 rounded-md bg-blue px-10 text-lg font-black text-white shadow-soft transition hover:bg-blue2 hover:text-panel disabled:opacity-50 max-sm:w-full"
                       disabled={busy() || !selectedProfile()}
                       onClick={launchSelected}
                     >
-                      Jugar
+                      {busyLabel() === "Abriendo" ? "Abriendo" : busyLabel() === "Preparando" ? "Preparando" : "Jugar"}
                     </button>
                   </div>
                 </div>

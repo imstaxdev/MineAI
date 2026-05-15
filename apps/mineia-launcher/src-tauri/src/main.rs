@@ -53,6 +53,15 @@ fn detect_java() -> Result<JavaInfo, String> {
 }
 
 #[tauri::command]
+fn is_version_installed(state: State<'_, AppState>, version: String) -> Result<bool, String> {
+    let context = lock_context(&state)?;
+    Ok(mineia_runtime::is_version_installed(
+        &context.paths,
+        &version,
+    ))
+}
+
+#[tauri::command]
 async fn list_minecraft_versions(
     state: State<'_, AppState>,
 ) -> Result<Vec<MinecraftVersionItem>, String> {
@@ -75,6 +84,20 @@ async fn install_version(
         context.paths.clone()
     };
     mineia_runtime::install_vanilla_version(&paths, &version)
+        .await
+        .map_err(to_message)
+}
+
+#[tauri::command]
+async fn prepare_version_for_launch(
+    state: State<'_, AppState>,
+    version: String,
+) -> Result<InstallVersionReport, String> {
+    let paths = {
+        let context = lock_context(&state)?;
+        context.paths.clone()
+    };
+    mineia_runtime::prepare_version_for_launch(&paths, &version)
         .await
         .map_err(to_message)
 }
@@ -173,8 +196,10 @@ fn main() {
             list_profiles,
             update_profile_settings,
             detect_java,
+            is_version_installed,
             list_minecraft_versions,
             install_version,
+            prepare_version_for_launch,
             launch_profile,
             import_mod,
             import_shader,

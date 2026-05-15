@@ -286,6 +286,21 @@ pub async fn install_vanilla_version(
     paths: &MineiaPaths,
     version: &str,
 ) -> RuntimeResult<InstallVersionReport> {
+    install_version_files(paths, version, true).await
+}
+
+pub async fn prepare_version_for_launch(
+    paths: &MineiaPaths,
+    version: &str,
+) -> RuntimeResult<InstallVersionReport> {
+    install_version_files(paths, version, false).await
+}
+
+async fn install_version_files(
+    paths: &MineiaPaths,
+    version: &str,
+    include_assets: bool,
+) -> RuntimeResult<InstallVersionReport> {
     paths.ensure_runtime_dirs()?;
 
     let client = http_client()?;
@@ -352,30 +367,6 @@ pub async fn install_vanilla_version(
     )
     .await?;
 
-    let asset_index: AssetIndex = serde_json::from_reader(File::open(&asset_index_path)?)?;
-    for object in asset_index.objects.values() {
-        let prefix = &object.hash[0..2];
-        let destination = paths
-            .assets_dir
-            .join("objects")
-            .join(prefix)
-            .join(&object.hash);
-        let url = format!(
-            "https://resources.download.minecraft.net/{prefix}/{}",
-            object.hash
-        );
-        download_verified(
-            &client,
-            &url,
-            &destination,
-            Some(&object.hash),
-            object.size,
-            &mut report,
-        )
-        .await?;
-        report.assets += 1;
-    }
-
     let natives_dir = paths.natives_dir(&version_json.id);
     if natives_dir.exists() {
         fs::remove_dir_all(&natives_dir)?;
@@ -429,6 +420,32 @@ pub async fn install_vanilla_version(
             .await?;
             extract_native(&destination, &natives_dir, library.extract.as_ref())?;
             report.natives += 1;
+        }
+    }
+
+    if include_assets {
+        let asset_index: AssetIndex = serde_json::from_reader(File::open(&asset_index_path)?)?;
+        for object in asset_index.objects.values() {
+            let prefix = &object.hash[0..2];
+            let destination = paths
+                .assets_dir
+                .join("objects")
+                .join(prefix)
+                .join(&object.hash);
+            let url = format!(
+                "https://resources.download.minecraft.net/{prefix}/{}",
+                object.hash
+            );
+            download_verified(
+                &client,
+                &url,
+                &destination,
+                Some(&object.hash),
+                object.size,
+                &mut report,
+            )
+            .await?;
+            report.assets += 1;
         }
     }
 
