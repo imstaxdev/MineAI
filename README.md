@@ -1,5 +1,7 @@
 # MineIA
 
+Language: [English](README.md) | [Español](README.es.md)
+
 MineIA is an open source, offline-first Minecraft launcher built with AI assistance. It focuses on local profiles, low resource usage, simple mod and shader imports, and transparent runtime files.
 
 ## Features
