@@ -49,7 +49,7 @@ impl MineiaStore {
             VALUES
                 (?1, ?2, ?3, ?4, NULL, ?5, ?5)
             "#,
-            params![offline.username, offline.uuid.to_string(), "26.1.2", 2048_u32, now],
+            params![offline.username, offline.uuid.to_string(), "1.21.8", 2048_u32, now],
         )?;
 
         self.get_profile(connection.last_insert_rowid())

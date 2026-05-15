@@ -97,6 +97,47 @@ pub struct MinecraftVersionItem {
     pub installed: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MineiaGameOptions {
+    pub max_fps: u32,
+    pub render_distance: u32,
+    pub simulation_distance: u32,
+    pub vsync: bool,
+    pub graphics_mode: u8,
+    pub entity_shadows: bool,
+    pub clouds: bool,
+    pub particles: u8,
+    pub fps_hud: bool,
+}
+
+impl Default for MineiaGameOptions {
+    fn default() -> Self {
+        Self {
+            max_fps: 60,
+            render_distance: 5,
+            simulation_distance: 3,
+            vsync: false,
+            graphics_mode: 0,
+            entity_shadows: false,
+            clouds: false,
+            particles: 2,
+            fps_hud: true,
+        }
+    }
+}
+
+impl MineiaGameOptions {
+    fn sanitized(mut self) -> Self {
+        self.max_fps = self.max_fps.clamp(30, 260);
+        self.render_distance = self.render_distance.clamp(2, 32);
+        self.simulation_distance = self.simulation_distance.clamp(2, 16);
+        self.graphics_mode = self.graphics_mode.min(2);
+        self.particles = self.particles.min(2);
+        self
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct VersionManifest {
     latest: VersionManifestLatest,
@@ -516,7 +557,8 @@ pub fn launch_profile(paths: &MineiaPaths, profile: &Profile) -> RuntimeResult<L
 
     fs::create_dir_all(&profile_dir)?;
     fs::create_dir_all(&paths.logs_dir)?;
-    write_lightweight_options(&profile_dir)?;
+    let options = load_mineia_options(&profile_dir)?;
+    write_minecraft_options(&profile_dir, &options)?;
 
     let log_file = paths.logs_dir.join(format!(
         "profile-{}-{}.log",
@@ -630,7 +672,28 @@ fn system_memory_mb() -> Option<u32> {
     None
 }
 
-fn write_lightweight_options(profile_dir: &Path) -> RuntimeResult<()> {
+pub fn load_mineia_options(profile_dir: &Path) -> RuntimeResult<MineiaGameOptions> {
+    let options_path = profile_dir.join("mineia-options.json");
+    if !options_path.is_file() {
+        return Ok(MineiaGameOptions::default());
+    }
+
+    let options: MineiaGameOptions = serde_json::from_reader(File::open(options_path)?)?;
+    Ok(options.sanitized())
+}
+
+pub fn save_mineia_options(profile_dir: &Path, options: MineiaGameOptions) -> RuntimeResult<()> {
+    fs::create_dir_all(profile_dir)?;
+    let options = options.sanitized();
+    fs::write(
+        profile_dir.join("mineia-options.json"),
+        serde_json::to_vec_pretty(&options)?,
+    )?;
+    write_minecraft_options(profile_dir, &options)?;
+    Ok(())
+}
+
+fn write_minecraft_options(profile_dir: &Path, options: &MineiaGameOptions) -> RuntimeResult<()> {
     let options_path = profile_dir.join("options.txt");
     let mut lines = if options_path.is_file() {
         fs::read_to_string(&options_path)?
@@ -641,27 +704,46 @@ fn write_lightweight_options(profile_dir: &Path) -> RuntimeResult<()> {
         Vec::new()
     };
 
-    let light_options = [
-        ("enableVsync", "false"),
-        ("maxFps", "60"),
-        ("graphicsMode", "0"),
-        ("renderDistance", "5"),
-        ("simulationDistance", "3"),
-        ("entityDistanceScaling", "0.5"),
-        ("entityShadows", "false"),
-        ("renderClouds", "\"false\""),
-        ("cloudRange", "32"),
-        ("biomeBlendRadius", "0"),
-        ("mipmapLevels", "0"),
-        ("particles", "2"),
-        ("fovEffectScale", "0.0"),
-        ("screenEffectScale", "0.0"),
-        ("prioritizeChunkUpdates", "2"),
-        ("inactivityFpsLimit", "\"minimized\""),
+    let cloud_value = if options.clouds {
+        "\"true\""
+    } else {
+        "\"false\""
+    };
+    let light_options: Vec<(&str, String)> = vec![
+        (
+            "enableVsync",
+            if options.vsync { "true" } else { "false" }.to_owned(),
+        ),
+        ("maxFps", options.max_fps.to_string()),
+        ("graphicsMode", options.graphics_mode.to_string()),
+        ("renderDistance", options.render_distance.to_string()),
+        (
+            "simulationDistance",
+            options.simulation_distance.to_string(),
+        ),
+        ("entityDistanceScaling", "0.5".to_owned()),
+        (
+            "entityShadows",
+            if options.entity_shadows {
+                "true"
+            } else {
+                "false"
+            }
+            .to_owned(),
+        ),
+        ("renderClouds", cloud_value.to_owned()),
+        ("cloudRange", "32".to_owned()),
+        ("biomeBlendRadius", "0".to_owned()),
+        ("mipmapLevels", "0".to_owned()),
+        ("particles", options.particles.to_string()),
+        ("fovEffectScale", "0.0".to_owned()),
+        ("screenEffectScale", "0.0".to_owned()),
+        ("prioritizeChunkUpdates", "2".to_owned()),
+        ("inactivityFpsLimit", "\"minimized\"".to_owned()),
     ];
 
     for (key, value) in light_options {
-        upsert_option(&mut lines, key, value);
+        upsert_option(&mut lines, key, &value);
     }
 
     fs::write(options_path, format!("{}\n", lines.join("\n")))?;

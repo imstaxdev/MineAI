@@ -1,7 +1,8 @@
-import { For, Show, createMemo, createSignal, onMount } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import {
   InstallVersionReport,
   LaunchResult,
+  MineiaGameOptions,
   MinecraftVersionItem,
   ModpackImportReport,
   Profile,
@@ -30,10 +31,24 @@ const fallbackVersionCards: VersionCard[] = [
 const navItems = [
   { id: "play", label: "Inicio", mark: "P" },
   { id: "versions", label: "Versiones", mark: "V" },
+  { id: "options", label: "Opciones", mark: "O" },
+  { id: "console", label: "Consola", mark: "C" },
   { id: "mods", label: "Mods", mark: "M" },
 ] as const;
 
 type Panel = (typeof navItems)[number]["id"];
+
+const defaultGameOptions: MineiaGameOptions = {
+  maxFps: 60,
+  renderDistance: 5,
+  simulationDistance: 3,
+  vsync: false,
+  graphicsMode: 0,
+  entityShadows: false,
+  clouds: false,
+  particles: 2,
+  fpsHud: true,
+};
 
 function toVersionCard(version: MinecraftVersionItem): VersionCard {
   return {
@@ -53,6 +68,8 @@ export default function App() {
   const [importPath, setImportPath] = createSignal("");
   const [installReport, setInstallReport] = createSignal<InstallVersionReport | null>(null);
   const [launch, setLaunch] = createSignal<LaunchResult | null>(null);
+  const [consoleText, setConsoleText] = createSignal("La consola aparecera cuando inicies Minecraft.");
+  const [gameOptions, setGameOptions] = createSignal<MineiaGameOptions>(defaultGameOptions);
   const [modpack, setModpack] = createSignal<ModpackImportReport | null>(null);
   const [busy, setBusy] = createSignal(false);
   const [busyLabel, setBusyLabel] = createSignal("");
@@ -72,6 +89,17 @@ export default function App() {
 
   onMount(() => {
     void bootstrap();
+  });
+
+  createEffect(() => {
+    const currentLaunch = launch();
+    if (!currentLaunch) return;
+
+    void refreshConsole(currentLaunch.logFile);
+    const interval = window.setInterval(() => {
+      void refreshConsole(currentLaunch.logFile);
+    }, 1500);
+    onCleanup(() => window.clearInterval(interval));
   });
 
   async function runTask(task: () => Promise<void>) {
@@ -123,6 +151,7 @@ export default function App() {
   function selectProfile(profile: Profile) {
     setSelectedId(profile.id);
     setVersion(resolveVersion(profile.minecraftVersion));
+    void loadMineiaOptions(profile.id);
   }
 
   function chooseVersion(id: string) {
@@ -170,8 +199,45 @@ export default function App() {
       await nextFrame();
       const result = await api.launchProfile(updated.id);
       setLaunch(result);
+      setPanel("console");
+      await refreshConsole(result.logFile);
       setMessage("Minecraft se esta abriendo");
     });
+  }
+
+  async function loadMineiaOptions(profileId: number) {
+    try {
+      setGameOptions(await api.getMineiaOptions(profileId));
+    } catch {
+      setGameOptions(defaultGameOptions);
+    }
+  }
+
+  async function saveMineiaOptions() {
+    const profile = selectedProfile();
+    if (!profile) return;
+
+    await runTask(async () => {
+      const saved = await api.saveMineiaOptions(profile.id, gameOptions());
+      setGameOptions(saved);
+      setMessage("Opciones MineIA guardadas");
+    });
+  }
+
+  function updateGameOption<Key extends keyof MineiaGameOptions>(
+    key: Key,
+    value: MineiaGameOptions[Key],
+  ) {
+    setGameOptions((current) => ({ ...current, [key]: value }));
+  }
+
+  async function refreshConsole(logFile: string) {
+    try {
+      const text = await api.readLogTail(logFile);
+      setConsoleText(text.trim().length > 0 ? text : "Minecraft inicio. Esperando salida de Java...");
+    } catch (error) {
+      setConsoleText(error instanceof Error ? error.message : String(error));
+    }
   }
 
   async function installSelectedVersion() {
@@ -457,6 +523,107 @@ export default function App() {
             </section>
           </Show>
 
+          <Show when={panel() === "options"}>
+            <section class="grid grid-cols-[minmax(0,1fr)_340px] gap-5 max-2xl:grid-cols-1">
+              <div class="rounded-md border border-line bg-surface p-6 shadow-soft">
+                <div class="mb-5 flex items-center justify-between gap-3">
+                  <div>
+                    <h3 class="text-2xl font-black">MineIA Options</h3>
+                    <p class="text-sm text-muted">Ajustes por perfil escritos en options.txt antes de iniciar.</p>
+                  </div>
+                  <button
+                    class="rounded-md bg-blue px-5 py-3 text-sm font-black text-white transition hover:bg-blue2 hover:text-panel disabled:opacity-50"
+                    disabled={busy() || !selectedProfile()}
+                    onClick={saveMineiaOptions}
+                  >
+                    Guardar
+                  </button>
+                </div>
+                <div class="grid grid-cols-2 gap-4 max-lg:grid-cols-1">
+                  <OptionNumber
+                    label="FPS maximos"
+                    value={gameOptions().maxFps}
+                    min={30}
+                    max={260}
+                    step={10}
+                    onInput={(value) => updateGameOption("maxFps", value)}
+                  />
+                  <OptionNumber
+                    label="Render distance"
+                    value={gameOptions().renderDistance}
+                    min={2}
+                    max={32}
+                    step={1}
+                    onInput={(value) => updateGameOption("renderDistance", value)}
+                  />
+                  <OptionNumber
+                    label="Simulation distance"
+                    value={gameOptions().simulationDistance}
+                    min={2}
+                    max={16}
+                    step={1}
+                    onInput={(value) => updateGameOption("simulationDistance", value)}
+                  />
+                  <OptionSelect
+                    label="Graficos"
+                    value={gameOptions().graphicsMode}
+                    options={[
+                      { value: 0, label: "Rapido" },
+                      { value: 1, label: "Elegante" },
+                      { value: 2, label: "Fabuloso" },
+                    ]}
+                    onInput={(value) => updateGameOption("graphicsMode", value)}
+                  />
+                  <OptionToggle
+                    label="VSync"
+                    checked={gameOptions().vsync}
+                    onInput={(value) => updateGameOption("vsync", value)}
+                  />
+                  <OptionToggle
+                    label="Sombras de entidades"
+                    checked={gameOptions().entityShadows}
+                    onInput={(value) => updateGameOption("entityShadows", value)}
+                  />
+                  <OptionToggle
+                    label="Nubes"
+                    checked={gameOptions().clouds}
+                    onInput={(value) => updateGameOption("clouds", value)}
+                  />
+                  <OptionToggle
+                    label="HUD FPS MineIA"
+                    checked={gameOptions().fpsHud}
+                    onInput={(value) => updateGameOption("fpsHud", value)}
+                  />
+                </div>
+              </div>
+              <FpsIslandPreview enabled={gameOptions().fpsHud} maxFps={gameOptions().maxFps} />
+            </section>
+          </Show>
+
+          <Show when={panel() === "console"}>
+            <section class="rounded-md border border-line bg-surface p-6 shadow-soft">
+              <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 class="text-2xl font-black">Consola Java</h3>
+                  <p class="text-sm text-muted">Salida del proceso Minecraft guardada por MineIA.</p>
+                </div>
+                <button
+                  class="rounded-md border border-line bg-surface2 px-4 py-3 text-sm font-bold text-ink transition hover:border-blue2 disabled:opacity-50"
+                  disabled={!launch()}
+                  onClick={() => {
+                    const current = launch();
+                    if (current) void refreshConsole(current.logFile);
+                  }}
+                >
+                  Actualizar
+                </button>
+              </div>
+              <pre class="min-h-[440px] overflow-auto rounded-md border border-line bg-black/45 p-4 font-mono text-xs leading-5 text-blue2 whitespace-pre-wrap">
+                {consoleText()}
+              </pre>
+            </section>
+          </Show>
+
           <Show when={panel() === "mods"}>
             <section class="rounded-md border border-line bg-surface p-6 shadow-soft">
               <div class="mb-5 flex items-center justify-between gap-3">
@@ -543,6 +710,92 @@ function VersionGrid(props: {
         )}
       </For>
     </div>
+  );
+}
+
+function OptionNumber(props: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onInput: (value: number) => void;
+}) {
+  return (
+    <label class="rounded-md border border-line bg-panel p-4">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <span class="text-sm font-black">{props.label}</span>
+        <span class="rounded-sm border border-blue/40 bg-blue/10 px-2 py-1 text-xs font-bold text-blue2">
+          {props.value}
+        </span>
+      </div>
+      <input
+        class="w-full accent-blue2"
+        type="range"
+        min={props.min}
+        max={props.max}
+        step={props.step}
+        value={props.value}
+        onInput={(event) => props.onInput(Number(event.currentTarget.value))}
+      />
+    </label>
+  );
+}
+
+function OptionSelect(props: {
+  label: string;
+  value: number;
+  options: { value: number; label: string }[];
+  onInput: (value: number) => void;
+}) {
+  return (
+    <label class="rounded-md border border-line bg-panel p-4">
+      <span class="mb-3 block text-sm font-black">{props.label}</span>
+      <select
+        class="w-full rounded-md border border-line bg-black/20 px-3 py-3 text-sm font-bold text-ink outline-none focus:border-blue2"
+        value={props.value}
+        onInput={(event) => props.onInput(Number(event.currentTarget.value))}
+      >
+        <For each={props.options}>
+          {(option) => <option value={option.value}>{option.label}</option>}
+        </For>
+      </select>
+    </label>
+  );
+}
+
+function OptionToggle(props: {
+  label: string;
+  checked: boolean;
+  onInput: (value: boolean) => void;
+}) {
+  return (
+    <label class="flex items-center justify-between gap-4 rounded-md border border-line bg-panel p-4">
+      <span class="text-sm font-black">{props.label}</span>
+      <input
+        class="h-5 w-5 accent-blue2"
+        type="checkbox"
+        checked={props.checked}
+        onInput={(event) => props.onInput(event.currentTarget.checked)}
+      />
+    </label>
+  );
+}
+
+function FpsIslandPreview(props: { enabled: boolean; maxFps: number }) {
+  return (
+    <aside class="rounded-md border border-line bg-surface p-5 shadow-soft">
+      <h3 class="mb-4 text-lg font-black">HUD FPS</h3>
+      <div class="relative min-h-64 overflow-hidden rounded-md border border-line bg-[linear-gradient(135deg,#06101d,#10233b)]">
+        <div class="absolute left-1/2 top-6 -translate-x-1/2 rounded-full border border-white/20 bg-black/45 px-5 py-3 text-center shadow-soft backdrop-blur">
+          <p class="text-xs font-black uppercase tracking-[0.18em] text-blue2">MineIA</p>
+          <p class="text-2xl font-black text-white">{props.enabled ? props.maxFps : "--"} FPS</p>
+        </div>
+        <div class="absolute bottom-5 left-5 right-5 rounded-md border border-blue/30 bg-blue/10 p-4 text-sm text-muted">
+          El marcador real dentro de Minecraft requiere un mod Fabric de MineIA. Esta opcion queda guardada para ese cliente.
+        </div>
+      </div>
+    </aside>
   );
 }
 
