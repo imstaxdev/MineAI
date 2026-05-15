@@ -81,6 +81,10 @@ target/release/bundle/
 
 Para publicar versiones, adjunta los archivos generados en `target/release/bundle/` dentro de la página de GitHub Releases.
 
+Instalador actual para Windows:
+
+- [MineIA_0.1.0_x64-setup.exe](releases/MineIA_0.1.0_x64-setup.exe)
+
 Nombres recomendados:
 
 - `MineIA_1.0.0_x64-setup.exe`

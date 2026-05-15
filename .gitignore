@@ -26,6 +26,8 @@ logs/
 *.msi
 *.exe
 *.zip
+!releases/
+!releases/*.exe
 
 AppData/
 data/

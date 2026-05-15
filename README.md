@@ -81,6 +81,10 @@ target/release/bundle/
 
 For public releases, attach generated files from `target/release/bundle/` to the GitHub Release page.
 
+Current Windows installer:
+
+- [MineIA_0.1.0_x64-setup.exe](releases/MineIA_0.1.0_x64-setup.exe)
+
 Recommended release names:
 
 - `MineIA_1.0.0_x64-setup.exe`
