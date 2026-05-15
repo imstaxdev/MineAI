@@ -1,0 +1,13 @@
+[package]
+name = "mineia-auth"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+hex.workspace = true
+md-5.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+uuid.workspace = true

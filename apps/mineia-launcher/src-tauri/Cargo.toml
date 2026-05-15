@@ -1,0 +1,18 @@
+[package]
+name = "mineia-launcher"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+build = "build.rs"
+
+[build-dependencies]
+tauri-build.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+mineia-core = { path = "../../../crates/mineia-core" }
+mineia-modpacks = { path = "../../../crates/mineia-modpacks" }
+mineia-runtime = { path = "../../../crates/mineia-runtime" }
+tauri.workspace = true
