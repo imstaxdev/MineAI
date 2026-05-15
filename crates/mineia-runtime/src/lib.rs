@@ -88,15 +88,32 @@ pub struct InstallVersionReport {
     pub natives: usize,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MinecraftVersionItem {
+    pub id: String,
+    pub version_type: String,
+    pub latest: bool,
+    pub installed: bool,
+}
+
 #[derive(Debug, Deserialize)]
 struct VersionManifest {
+    latest: VersionManifestLatest,
     versions: Vec<VersionManifestEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct VersionManifestLatest {
+    release: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct VersionManifestEntry {
     id: String,
+    #[serde(rename = "type")]
+    version_type: String,
     url: String,
 }
 
@@ -416,6 +433,39 @@ pub async fn install_vanilla_version(
     }
 
     Ok(report)
+}
+
+pub async fn list_minecraft_versions(
+    paths: &MineiaPaths,
+    limit: usize,
+) -> RuntimeResult<Vec<MinecraftVersionItem>> {
+    let client = http_client()?;
+    let manifest: VersionManifest = client
+        .get(VERSION_MANIFEST_URL)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+
+    Ok(manifest
+        .versions
+        .into_iter()
+        .filter(|entry| entry.version_type == "release")
+        .take(limit)
+        .map(|entry| MinecraftVersionItem {
+            latest: entry.id == manifest.latest.release,
+            installed: is_version_installed(paths, &entry.id),
+            version_type: entry.version_type,
+            id: entry.id,
+        })
+        .collect())
+}
+
+pub fn is_version_installed(paths: &MineiaPaths, version: &str) -> bool {
+    let version_dir = paths.versions_dir.join(version);
+    version_dir.join(format!("{version}.jar")).is_file()
+        && version_dir.join(format!("{version}.json")).is_file()
 }
 
 fn http_client() -> RuntimeResult<reqwest::Client> {

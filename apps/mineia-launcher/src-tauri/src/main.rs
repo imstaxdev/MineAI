@@ -4,7 +4,7 @@ use std::{fs, sync::Mutex};
 
 use mineia_core::{CreateProfileRequest, MineiaContext, Profile, ProfileSettings};
 use mineia_modpacks::{ImportedFile, ModpackImportReport};
-use mineia_runtime::{InstallVersionReport, JavaInfo, LaunchResult};
+use mineia_runtime::{InstallVersionReport, JavaInfo, LaunchResult, MinecraftVersionItem};
 use serde::Serialize;
 use tauri::State;
 
@@ -50,6 +50,19 @@ fn update_profile_settings(
 #[tauri::command]
 fn detect_java() -> Result<JavaInfo, String> {
     mineia_runtime::detect_java().map_err(to_message)
+}
+
+#[tauri::command]
+async fn list_minecraft_versions(
+    state: State<'_, AppState>,
+) -> Result<Vec<MinecraftVersionItem>, String> {
+    let paths = {
+        let context = lock_context(&state)?;
+        context.paths.clone()
+    };
+    mineia_runtime::list_minecraft_versions(&paths, 32)
+        .await
+        .map_err(to_message)
 }
 
 #[tauri::command]
@@ -160,6 +173,7 @@ fn main() {
             list_profiles,
             update_profile_settings,
             detect_java,
+            list_minecraft_versions,
             install_version,
             launch_profile,
             import_mod,

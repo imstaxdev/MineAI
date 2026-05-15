@@ -39,6 +39,13 @@ export type InstallVersionReport = {
   natives: number;
 };
 
+export type MinecraftVersionItem = {
+  id: string;
+  versionType: string;
+  latest: boolean;
+  installed: boolean;
+};
+
 export type ImportedFile = {
   fileName: string;
   destination: string;
@@ -69,6 +76,7 @@ export const api = {
   updateProfileSettings: (profileId: number, settings: ProfileSettings) =>
     invoke<Profile>("update_profile_settings", { profileId, settings }),
   detectJava: () => invoke<JavaInfo>("detect_java"),
+  listMinecraftVersions: () => invoke<MinecraftVersionItem[]>("list_minecraft_versions"),
   installVersion: (version: string) => invoke<InstallVersionReport>("install_version", { version }),
   launchProfile: (profileId: number) => invoke<LaunchResult>("launch_profile", { profileId }),
   importMod: (profileId: number, file: string) => invoke<ImportedFile>("import_mod", { profileId, file }),

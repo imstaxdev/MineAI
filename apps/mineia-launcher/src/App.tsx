@@ -1,16 +1,30 @@
 import { For, Show, createMemo, createSignal, onMount } from "solid-js";
-import { InstallVersionReport, LaunchResult, ModpackImportReport, Profile, api } from "./api";
+import {
+  InstallVersionReport,
+  LaunchResult,
+  MinecraftVersionItem,
+  ModpackImportReport,
+  Profile,
+  api,
+} from "./api";
 import logo from "./assets/mineia.png";
 
-const versionCards = [
-  { id: "26.1.2", tag: "Ultima release", note: "Actual" },
-  { id: "26.1.1", tag: "Release", note: "Reciente" },
-  { id: "26.1", tag: "Release", note: "Base 26" },
-  { id: "1.21.11", tag: "Release", note: "Nueva" },
-  { id: "1.21.10", tag: "Release", note: "Estable" },
-  { id: "1.21.9", tag: "Release", note: "Estable" },
-  { id: "1.21.8", tag: "Release", note: "Instalada" },
-  { id: "1.21.7", tag: "Release", note: "Extra" },
+type VersionCard = {
+  id: string;
+  tag: string;
+  note: string;
+  installed: boolean;
+};
+
+const fallbackVersionCards: VersionCard[] = [
+  { id: "1.21.8", tag: "Release", note: "Recomendada", installed: false },
+  { id: "1.21.7", tag: "Release", note: "Oficial", installed: false },
+  { id: "1.21.6", tag: "Release", note: "Oficial", installed: false },
+  { id: "1.21.5", tag: "Release", note: "Oficial", installed: false },
+  { id: "1.21.4", tag: "Release", note: "Oficial", installed: false },
+  { id: "1.21.3", tag: "Release", note: "Oficial", installed: false },
+  { id: "1.21.1", tag: "Release", note: "Oficial", installed: false },
+  { id: "1.20.6", tag: "Release", note: "Oficial", installed: false },
 ];
 
 const navItems = [
@@ -21,11 +35,21 @@ const navItems = [
 
 type Panel = (typeof navItems)[number]["id"];
 
+function toVersionCard(version: MinecraftVersionItem): VersionCard {
+  return {
+    id: version.id,
+    tag: version.versionType === "release" ? "Release" : version.versionType,
+    note: version.installed ? "Instalada" : version.latest ? "Actual" : "Oficial",
+    installed: version.installed,
+  };
+}
+
 export default function App() {
   const [profiles, setProfiles] = createSignal<Profile[]>([]);
   const [selectedId, setSelectedId] = createSignal<number | null>(null);
   const [username, setUsername] = createSignal("");
-  const [version, setVersion] = createSignal(versionCards[0].id);
+  const [versionCards, setVersionCards] = createSignal<VersionCard[]>(fallbackVersionCards);
+  const [version, setVersion] = createSignal(fallbackVersionCards[0].id);
   const [importPath, setImportPath] = createSignal("");
   const [installReport, setInstallReport] = createSignal<InstallVersionReport | null>(null);
   const [launch, setLaunch] = createSignal<LaunchResult | null>(null);
@@ -40,13 +64,13 @@ export default function App() {
   });
 
   const selectedVersionCard = createMemo(
-    () => versionCards.find((item) => item.id === version()) ?? versionCards[0],
+    () => versionCards().find((item) => item.id === version()) ?? versionCards()[0],
   );
 
-  const localVersionCount = createMemo(() => versionCards.length);
+  const localVersionCount = createMemo(() => versionCards().length);
 
   onMount(() => {
-    void refreshProfiles();
+    void bootstrap();
   });
 
   async function runTask(task: () => Promise<void>) {
@@ -58,6 +82,29 @@ export default function App() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function bootstrap() {
+    await runTask(async () => {
+      const [data, officialVersions] = await Promise.all([
+        api.listProfiles(),
+        api.listMinecraftVersions().catch(() => [] as MinecraftVersionItem[]),
+      ]);
+      const nextVersions =
+        officialVersions.length > 0 ? officialVersions.map(toVersionCard) : fallbackVersionCards;
+      setProfiles(data);
+      setVersionCards(nextVersions);
+      if (!selectedId() && data.length > 0) {
+        selectProfile(data[0]);
+      } else if (!nextVersions.some((item) => item.id === version())) {
+        setVersion(nextVersions[0].id);
+      }
+      setMessage(
+        officialVersions.length > 0
+          ? "Versiones oficiales cargadas"
+          : "Sin conexion: usando versiones recomendadas",
+      );
+    });
   }
 
   async function refreshProfiles() {
@@ -73,7 +120,7 @@ export default function App() {
 
   function selectProfile(profile: Profile) {
     setSelectedId(profile.id);
-    setVersion(profile.minecraftVersion);
+    setVersion(resolveVersion(profile.minecraftVersion));
   }
 
   function chooseVersion(id: string) {
@@ -109,7 +156,12 @@ export default function App() {
     if (!profile) return;
 
     await runTask(async () => {
+      setMessage(`Preparando ${version()}...`);
       const updated = await persistSelectedVersion(profile);
+      const report = await api.installVersion(version());
+      setInstallReport(report);
+      markVersionInstalled(report.version);
+      setMessage(`Abriendo ${report.version}...`);
       const result = await api.launchProfile(updated.id);
       setLaunch(result);
       setMessage("Minecraft se esta abriendo");
@@ -118,8 +170,10 @@ export default function App() {
 
   async function installSelectedVersion() {
     await runTask(async () => {
+      setMessage(`Preparando ${version()}...`);
       const result = await api.installVersion(version());
       setInstallReport(result);
+      markVersionInstalled(result.version);
       setMessage(`Version lista: ${result.version}`);
     });
   }
@@ -127,15 +181,30 @@ export default function App() {
   async function installAllVersions() {
     await runTask(async () => {
       let last: InstallVersionReport | null = null;
-      for (const item of versionCards) {
+      for (const item of versionCards()) {
         setMessage(`Preparando ${item.id}`);
         last = await api.installVersion(item.id);
+        markVersionInstalled(item.id);
       }
       if (last) {
         setInstallReport(last);
       }
       setMessage("Versiones listas en local");
     });
+  }
+
+  function resolveVersion(candidate: string) {
+    return versionCards().some((item) => item.id === candidate)
+      ? candidate
+      : versionCards()[0].id;
+  }
+
+  function markVersionInstalled(id: string) {
+    setVersionCards((items) =>
+      items.map((item) =>
+        item.id === id ? { ...item, installed: true, note: "Instalada" } : item,
+      ),
+    );
   }
 
   async function importFile(kind: "mod" | "shader" | "modpack") {
@@ -343,7 +412,7 @@ export default function App() {
                     Preparar todas
                   </button>
                 </div>
-                <VersionGrid version={version()} onChoose={chooseVersion} />
+                <VersionGrid items={versionCards()} version={version()} onChoose={chooseVersion} />
               </section>
 
               <StatusPanel
@@ -370,7 +439,7 @@ export default function App() {
                   Preparar todas
                 </button>
               </div>
-              <VersionGrid version={version()} onChoose={chooseVersion} large />
+              <VersionGrid items={versionCards()} version={version()} onChoose={chooseVersion} large />
             </section>
           </Show>
 
@@ -423,6 +492,7 @@ export default function App() {
 }
 
 function VersionGrid(props: {
+  items: VersionCard[];
   version: string;
   onChoose: (id: string) => void;
   large?: boolean;
@@ -435,7 +505,7 @@ function VersionGrid(props: {
           : "grid-cols-4 max-2xl:grid-cols-3 max-md:grid-cols-2 max-sm:grid-cols-1"
       }`}
     >
-      <For each={versionCards}>
+      <For each={props.items}>
         {(item) => (
           <button
             class={`group relative overflow-hidden rounded-md border px-4 py-4 text-left transition ${
